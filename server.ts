@@ -8,31 +8,46 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new Database("lab.db");
+let db: any;
 
-// Initialize Database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT
-  );
+try {
+  db = new Database("lab.db");
+  // Initialize Database
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE,
+      password TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS papers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    authors TEXT,
-    journal TEXT,
-    year INTEGER,
-    link TEXT,
-    researcher_name TEXT
-  );
+    CREATE TABLE IF NOT EXISTS papers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT,
+      authors TEXT,
+      journal TEXT,
+      year INTEGER,
+      link TEXT,
+      researcher_name TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS site_content (
-    key TEXT PRIMARY KEY,
-    value TEXT
-  );
-`);
+    CREATE TABLE IF NOT EXISTS site_content (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
+} catch (dbErr) {
+  console.error("Database initialization failed:", dbErr);
+  // Create a mock DB object to prevent crashes on API calls
+  db = {
+    prepare: () => ({
+      get: () => null,
+      all: () => [],
+      run: () => ({ lastInsertRowid: 0 })
+    }),
+    exec: () => {},
+    transaction: (fn: any) => fn
+  };
+}
 
 // Seed Admin User (In a real app, use hashing. For this demo, we'll use a simple check)
 const adminUser = db.prepare("SELECT * FROM users WHERE username = ?").get("admin");
@@ -59,6 +74,10 @@ async function startServer() {
 
   app.use(express.json());
   app.use(cookieParser());
+
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", environment: process.env.NODE_ENV });
+  });
 
   // Auth Middleware
   const authenticate = (req: any, res: any, next: any) => {

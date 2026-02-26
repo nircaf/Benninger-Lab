@@ -626,34 +626,59 @@ export default function App() {
   const [content, setContent] = useState<any>({});
   const [loading, setLoading] = useState(true);
 
+  const [error, setError] = useState<string | null>(null);
+
   const fetchData = async () => {
-    const [papersRes, contentRes, userRes] = await Promise.all([
-      fetch("/api/papers"),
-      fetch("/api/content"),
-      fetch("/api/me")
-    ]);
-    const [papersData, contentData, userData] = await Promise.all([
-      papersRes.json(),
-      contentRes.json(),
-      userRes.json()
-    ]);
-    
-    if (papersData.length === 0) {
-      // Auto-seed if no papers
-      const seedRes = await fetch("/api/seed");
-      const seedData = await seedRes.json();
-      if (seedData.success) {
-        const newPapersRes = await fetch("/api/papers");
-        const newPapersData = await newPapersRes.json();
-        setPapers(newPapersData);
+    try {
+      // Check health first
+      const healthRes = await fetch("/api/health").catch(() => null);
+      if (!healthRes || !healthRes.ok) {
+        throw new Error("Backend server is unreachable. Please check your deployment.");
       }
-    } else {
-      setPapers(papersData);
+
+      const [papersRes, contentRes, userRes] = await Promise.all([
+        fetch("/api/papers"),
+        fetch("/api/content"),
+        fetch("/api/me")
+      ]);
+
+      if (!papersRes.ok || !contentRes.ok || !userRes.ok) {
+        throw new Error("Failed to fetch initial data from server.");
+      }
+
+      const [papersData, contentData, userData] = await Promise.all([
+        papersRes.json(),
+        contentRes.json(),
+        userRes.json()
+      ]);
+      
+      if (papersData.length === 0) {
+        // Auto-seed if no papers
+        try {
+          const seedRes = await fetch("/api/seed");
+          const seedData = await seedRes.json();
+          if (seedData.success) {
+            const newPapersRes = await fetch("/api/papers");
+            const newPapersData = await newPapersRes.json();
+            setPapers(newPapersData);
+          }
+        } catch (seedErr) {
+          console.error("Seeding failed:", seedErr);
+          // Don't block the app if seeding fails, just show empty
+          setPapers([]);
+        }
+      } else {
+        setPapers(papersData);
+      }
+      
+      setContent(contentData);
+      setUser(userData.user);
+    } catch (err: any) {
+      console.error("Initialization error:", err);
+      setError(err.message || "An unexpected error occurred.");
+    } finally {
+      setLoading(false);
     }
-    
-    setContent(contentData);
-    setUser(userData.user);
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -674,6 +699,30 @@ export default function App() {
         >
           <Brain className="w-12 h-12 text-indigo-600" />
         </motion.div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-4 text-center">
+        <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 mb-6">
+          <X className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">Connection Error</h2>
+        <p className="text-slate-600 mb-8 max-w-md">
+          {error}
+          <br />
+          <span className="text-sm mt-2 block">
+            If you are on Vercel, ensure your environment variables are set and the backend is running.
+          </span>
+        </p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors"
+        >
+          Retry Connection
+        </button>
       </div>
     );
   }
